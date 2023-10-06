@@ -12,19 +12,22 @@ use std::str;
 
 use libc::{pid_t, strlen, MAP_SHARED};
 use mmap;
+use x86::*;
 
 #[allow(dead_code, non_camel_case_types)]
 mod hw_breakpoint;
 #[allow(dead_code, non_camel_case_types)]
 mod perf_event;
 
-pub mod parser;
-pub mod perf_file;
 pub mod perf_format;
 
 use self::perf_format::{EventAttrFlags, ReadFormatFlags, SampleFormatFlags};
 
 use crate::AbstractPerfCounter;
+use x86::perfcnt::intel::{EventDescription, Tuple};
+
+const IOCTL: usize = 16;
+const PERF_EVENT_OPEN: usize = 298;
 
 fn perf_event_open(
     hw_event: &perf_format::EventAttr,
@@ -34,8 +37,8 @@ fn perf_event_open(
     flags: ::libc::c_int,
 ) -> isize {
     unsafe {
-        libc::syscall(
-            libc::SYS_perf_event_open,
+        syscall!(
+            PERF_EVENT_OPEN,
             hw_event as *const perf_format::EventAttr as usize,
             pid,
             cpu,
@@ -46,7 +49,7 @@ fn perf_event_open(
 }
 
 fn ioctl(fd: ::libc::c_int, request: u64, value: ::libc::c_int) -> isize {
-    unsafe { libc::ioctl(fd, request, value) as isize }
+    unsafe { syscall!(IOCTL, fd, request, value) as isize }
 }
 
 pub struct PerfCounterBuilderLinux {
@@ -233,9 +236,7 @@ impl PerfCounterBuilderLinux {
     //}
 
     /// Instantiate a H/W performance counter using a hardware event as described in Intels SDM.
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    pub fn from_intel_event_description(counter: &x86::perfcnt::intel::EventDescription) -> PerfCounterBuilderLinux {
-        use x86::perfcnt::intel::Tuple;
+    pub fn from_intel_event_description(counter: &EventDescription) -> PerfCounterBuilderLinux {
         let mut pc: PerfCounterBuilderLinux = Default::default();
         let mut config: u64 = 0;
 
@@ -742,6 +743,7 @@ impl fmt::Debug for MMAPPage {
     }
 }
 
+#[allow(dead_code)]
 pub struct PerfCounter {
     fd: ::libc::c_int,
     file: File,
@@ -792,6 +794,7 @@ impl<'a> AbstractPerfCounter for PerfCounter {
     }
 }
 
+#[allow(dead_code)]
 pub struct SamplingPerfCounter {
     pc: PerfCounter,
     map: mmap::MemoryMap,
@@ -838,6 +841,7 @@ enum EventHeaderMisc {
 
 }*/
 
+#[allow(dead_code)]
 #[derive(Default, Debug)]
 struct EventHeader {
     event_type: u32,
@@ -881,7 +885,7 @@ impl MMAPRecord {
         let pgoff: u64 = read(ptr, 32);
         let filename = {
             let str_start = ptr.offset(40);
-            let strlen_ptr = str_start as *const libc::c_char;
+            let strlen_ptr = mem::transmute::<*const u8, &i8>(str_start);
             let length = strlen(strlen_ptr) as usize;
             let slice = slice::from_raw_parts(str_start, length);
             String::from(str::from_utf8(slice).unwrap())
@@ -900,6 +904,7 @@ impl MMAPRecord {
 }
 
 /// This record indicates when events are lost.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct LostRecord {
     header: EventHeader,
@@ -924,6 +929,7 @@ impl LostRecord {
 }
 
 /// This record indicates a change in the process name.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct CommRecord {
     header: EventHeader,
@@ -940,7 +946,7 @@ impl CommRecord {
 
         let comm = {
             let str_start = ptr.offset(16);
-            let strlen_ptr = str_start as *const libc::c_char;
+            let strlen_ptr = mem::transmute::<*const u8, &i8>(str_start);
             let length = strlen(strlen_ptr) as usize;
             let slice = slice::from_raw_parts(str_start, length);
             String::from(str::from_utf8(slice).unwrap())
@@ -955,6 +961,7 @@ impl CommRecord {
 }
 
 /// This record indicates a process exit event.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct ExitRecord {
     header: EventHeader,
@@ -1012,6 +1019,7 @@ impl ThrottleRecord {
 }
 
 /// This record indicates a fork event.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct ForkRecord {
     header: EventHeader,
@@ -1068,6 +1076,7 @@ impl ReadRecord {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct BranchEntry {
     pub from: u64,
@@ -1076,6 +1085,7 @@ struct BranchEntry {
 }
 
 /// This record indicates a sample.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct SampleRecord {
     header: EventHeader,
